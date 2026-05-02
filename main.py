@@ -14,8 +14,8 @@ from colorama import Fore, Style, init as colorama_init
 
 from logger import (
     generate_report,
+    personalized_haiku,
     print_recent_logs,
-    random_haiku,
     session_touch_focus_minutes,
 )
 
@@ -97,7 +97,10 @@ def pause_escape_hatch() -> None:
 
 def bribe_ghost() -> None:
     session_touch_focus_minutes(10)
-    print(f"{Fore.GREEN}🎺 +10 imaginary focus minutes. {random_haiku()}{Style.RESET_ALL}")
+    print(
+        f"{Fore.GREEN}🎺 +10 imaginary focus minutes.\n"
+        f"{personalized_haiku('focus', 'warn_popup')}{Style.RESET_ALL}"
+    )
     try:
         print("\a", end="")
     except Exception:
