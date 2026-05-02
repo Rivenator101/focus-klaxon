@@ -367,21 +367,24 @@ def run_watcher() -> None:
                 show_info_popup("Focus Klaxon", "Final step: closing distraction tab now")
                 log_distraction(active_site, note="auto_close")
                 closed = try_close_foreground_window()
-                if not closed:
-                    print("   (Close may have failed — browser security varies.)")
-                else:
+                
+                # ONLY open doc if tab was successfully closed
+                if closed:
                     print(f"{Fore.GREEN}   ✅ Tab closed successfully.{Style.RESET_ALL}")
+                    
+                    # Wait a moment to ensure the tab is fully closed
+                    time.sleep(1.0)
+                    
+                    print(f"\n{Fore.CYAN}📝 Opening punishment document...{Style.RESET_ALL}")
+                    try:
+                        phases = ["warn", "auto_close"] if not mouse_on else ["warn", "mouse", "auto_close"]
+                        dashboard_url = build_dashboard_url(work_url, active_site, phases)
+                        webbrowser.open(dashboard_url)
+                    except (OSError, ValueError) as e:
+                        print(f"{Fore.YELLOW}⚠️  Could not open dashboard: {e}{Style.RESET_ALL}", file=sys.stderr)
+                else:
+                    print(f"{Fore.RED}   ❌ Failed to close tab. No punishment document.{Style.RESET_ALL}")
                 
-                # Small delay to ensure tab is closed before opening doc
-                time.sleep(0.5)
-                
-                print(f"\n{Fore.CYAN}📝 Opening punishment document...{Style.RESET_ALL}")
-                try:
-                    phases = ["warn", "auto_close"] if not mouse_on else ["warn", "mouse", "auto_close"]
-                    dashboard_url = build_dashboard_url(work_url, active_site, phases)
-                    webbrowser.open(dashboard_url)
-                except (OSError, ValueError) as e:
-                    print(f"{Fore.YELLOW}⚠️  Could not open dashboard: {e}{Style.RESET_ALL}", file=sys.stderr)
                 print(f"\n{Fore.MAGENTA}{personalized_haiku(active_site, 'auto_close')}{Style.RESET_ALL}\n")
                 # Track when we last caught this site (for repeat offense detection)
                 if active_site:
