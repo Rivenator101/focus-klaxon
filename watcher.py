@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import sys
 import time
 import webbrowser
@@ -74,17 +75,28 @@ def load_config() -> dict:
 
 
 def match_trigger(context_lower: str, triggers: list[str]) -> str | None:
+    """Match triggers with word boundary awareness to reduce false positives."""
     for t in triggers:
         key = t.lower().strip()
-        if key and key in context_lower:
+        if not key:
+            continue
+        # Escape special regex characters and match as whole word or URL component
+        escaped = re.escape(key)
+        # Match: whole word boundary OR URL domain-like pattern (e.g., ".discord.com")
+        if re.search(rf"\b{escaped}\b|\b\w*\.{escaped}(\b|\.)", context_lower):
             return t
     return None
 
 
 def is_safe_window(context_lower: str, safe: list[str]) -> bool:
+    """Check if context matches any safe window pattern with word boundaries."""
     for s in safe:
-        key = s.lower().strip()
-        if key and key in context_lower:
+        pattern = s.strip()
+        if not pattern:
+            continue
+        # For exact app names, use word boundary; for URL fragments, use substring
+        escaped = re.escape(pattern.lower())
+        if re.search(rf"\b{escaped}\b", context_lower):
             return True
     return False
 
