@@ -17,7 +17,7 @@ import pyautogui
 from colorama import Fore, Style, init as colorama_init
 
 from logger import generate_report, log_distraction, random_haiku, session_start
-from platform_window import get_active_window_title, show_warning_popup, try_close_foreground_window
+from platform_window import get_active_context_text, show_warning_popup, try_close_foreground_window
 
 colorama_init(autoreset=True)
 
@@ -34,26 +34,26 @@ def load_config() -> dict:
     return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 
 
-def match_trigger(title_lower: str, triggers: list[str]) -> str | None:
+def match_trigger(context_lower: str, triggers: list[str]) -> str | None:
     for t in triggers:
         key = t.lower().strip()
-        if key and key in title_lower:
+        if key and key in context_lower:
             return t
     return None
 
 
-def is_safe_window(title_lower: str, safe: list[str]) -> bool:
+def is_safe_window(context_lower: str, safe: list[str]) -> bool:
     for s in safe:
-        if s.lower().strip() and s.lower().strip() in title_lower:
+        if s.lower().strip() and s.lower().strip() in context_lower:
             return True
     return False
 
 
 def still_on_trigger(site: str, triggers: list[str], safe: list[str]) -> bool:
-    title = get_active_window_title()
-    if not title or is_safe_window(title, safe):
+    context = get_active_context_text()
+    if not context or is_safe_window(context, safe):
         return False
-    return match_trigger(title, triggers) == site
+    return match_trigger(context, triggers) == site
 
 
 def wait_while_distraction(
@@ -126,19 +126,19 @@ def run_watcher() -> None:
 
     try:
         while True:
-            title = get_active_window_title()
+            context = get_active_context_text()
 
             if phase == "idle":
-                if not title or is_safe_window(title, safe):
+                if not context or is_safe_window(context, safe):
                     time.sleep(0.6)
                     continue
-                site = match_trigger(title, triggers)
+                site = match_trigger(context, triggers)
                 if not site:
                     time.sleep(0.6)
                     continue
                 active_site = site
                 phase = "warn"
-                print(f"\n{Fore.RED}\a⚠️  [{site}] detected in window title.{Style.RESET_ALL}")
+                print(f"\n{Fore.RED}\a⚠️  [{site}] detected in active browser context.{Style.RESET_ALL}")
                 print(f"   You have ~{warn_s:.0f}s. Close it or switch away.")
                 show_warning_popup(site)
                 continue

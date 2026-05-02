@@ -1,13 +1,25 @@
-"""Cross-platform helpers for foreground window title + close."""
+"""Cross-platform helpers for foreground context + close."""
 
 from __future__ import annotations
 
 import platform
 import subprocess
-import sys
 from typing import Callable
 
 _active_title_fn: Callable[[], str] | None = None
+
+
+def _run_osascript(script: str, timeout: float = 3) -> str:
+    try:
+        out = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        return (out.stdout or "").strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
 
 
 def _title_darwin() -> str:
@@ -21,16 +33,78 @@ tell application "System Events"
     return winTitle
 end tell
 """
-    try:
-        out = subprocess.run(
-            ["osascript", "-e", script],
-            capture_output=True,
-            text=True,
-            timeout=3,
-        )
-        return (out.stdout or "").strip().lower()
-    except (OSError, subprocess.TimeoutExpired):
+    return _run_osascript(script).lower()
+
+
+def _front_app_darwin() -> str:
+    script = r"""
+tell application "System Events"
+    return name of first application process whose frontmost is true
+end tell
+"""
+    return _run_osascript(script).lower()
+
+
+def _front_url_darwin() -> str:
+    """Return URL for frontmost supported macOS browser."""
+    app = _front_app_darwin()
+    scripts = {
+        "safari": r'''
+tell application "Safari"
+    if (count of windows) > 0 then
+        return URL of current tab of front window
+    end if
+end tell
+''',
+        "google chrome": r'''
+tell application "Google Chrome"
+    if (count of windows) > 0 then
+        return URL of active tab of front window
+    end if
+end tell
+''',
+        "opera": r'''
+tell application "Opera"
+    if (count of windows) > 0 then
+        return URL of active tab of front window
+    end if
+end tell
+''',
+        "opera gx": r'''
+tell application "Opera GX"
+    if (count of windows) > 0 then
+        return URL of active tab of front window
+    end if
+end tell
+''',
+        "brave browser": r'''
+tell application "Brave Browser"
+    if (count of windows) > 0 then
+        return URL of active tab of front window
+    end if
+end tell
+''',
+        "microsoft edge": r'''
+tell application "Microsoft Edge"
+    if (count of windows) > 0 then
+        return URL of active tab of front window
+    end if
+end tell
+''',
+        "arc": r'''
+tell application "Arc"
+    if (count of windows) > 0 then
+        try
+            return URL of active tab of front window
+        end try
+    end if
+end tell
+''',
+    }
+    script = scripts.get(app)
+    if not script:
         return ""
+    return _run_osascript(script, timeout=2).lower()
 
 
 def _title_win32() -> str:
@@ -69,6 +143,21 @@ def get_active_window_title() -> str:
         else:
             _active_title_fn = _title_linux
     return _active_title_fn()
+
+
+def get_active_context_text() -> str:
+    """
+    Returns a lowercase searchable text blob for detection.
+    Includes title and (on macOS supported browsers) active URL.
+    """
+    title = get_active_window_title()
+    system = platform.system()
+    if system != "Darwin":
+        return title
+    app = _front_app_darwin()
+    url = _front_url_darwin()
+    parts = [title, app, url]
+    return " | ".join([p for p in parts if p]).lower()
 
 
 def try_close_foreground_window() -> bool:
