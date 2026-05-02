@@ -7,7 +7,7 @@ CLI focus enforcer with escalation:
 3. Mouse chaos if ignored
 4. Force-close foreground tab/window and open your focus page
 
-# try it yourself:
+# Try it yourself:
 
 ## Run
 
