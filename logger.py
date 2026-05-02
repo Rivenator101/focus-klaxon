@@ -236,6 +236,8 @@ def generate_report() -> None:
 def session_start() -> None:
     payload = {"started_at": datetime.now().isoformat(timespec="seconds")}
     try:
+        # Ensure parent directory exists
+        SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
         SESSION_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     except OSError as e:
         print(f"{Fore.YELLOW}⚠️  Warning: Could not write session file: {e}{Style.RESET_ALL}", file=sys.stderr)
@@ -244,6 +246,8 @@ def session_start() -> None:
 def session_touch_focus_minutes(add_minutes: int) -> None:
     """Bribe-the-ghost: add imaginary focus credit for demo laughs."""
     try:
+        # Ensure parent directory exists
+        SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
         state = _load_json_safe(SESSION_FILE, default={})
         if not isinstance(state, dict):
             state = {}

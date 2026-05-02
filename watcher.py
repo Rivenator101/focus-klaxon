@@ -36,7 +36,7 @@ colorama_init(autoreset=True)
 
 CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
 
-pyautogui.FAILSAFE = True
+pyautogui.FAILSAFE = False
 
 Phase = Literal["idle", "warn", "mouse", "close"]
 
