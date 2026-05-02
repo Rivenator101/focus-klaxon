@@ -34,10 +34,52 @@ def load_config() -> dict:
             "warning_seconds": 5,
             "grace_after_mouse_seconds": 4,
             "mouse_crazy_enabled": True,
+            "mouse_crazy_seconds": 12,
+            "repeat_nudge_enabled": True,
+            "repeat_nudge_url": "about:blank",
+            "repeat_nudge_min_per_hour": 2,
         }
         CONFIG_PATH.write_text(json.dumps(default, indent=2), encoding="utf-8")
         return default
-    return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    
+    try:
+        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"{Fore.YELLOW}⚠️  Config corrupted: {e}. Using defaults.{Style.RESET_ALL}", file=sys.stderr)
+        # Return a safe default instead of crashing
+        return {
+            "trigger_sites": [],
+            "work_url": "about:blank",
+            "safe_windows": ["code", "vscode", "terminal", "iterm"],
+            "warning_seconds": 5,
+            "grace_after_mouse_seconds": 4,
+            "mouse_crazy_enabled": True,
+            "mouse_crazy_seconds": 12,
+            "repeat_nudge_enabled": False,
+            "repeat_nudge_url": "about:blank",
+            "repeat_nudge_min_per_hour": 2,
+        }
+    
+    # Validate all required fields are present
+    required_fields = {
+        "trigger_sites": list,
+        "work_url": str,
+        "safe_windows": list,
+        "warning_seconds": (int, float),
+        "grace_after_mouse_seconds": (int, float),
+        "mouse_crazy_enabled": bool,
+        "mouse_crazy_seconds": (int, float),
+    }
+    
+    for field, expected_type in required_fields.items():
+        if field not in cfg:
+            print(f"{Fore.YELLOW}⚠️  Config missing '{field}'. Using default.{Style.RESET_ALL}", file=sys.stderr)
+            # Re-initialize config
+            cfg_new = load_config()
+            save_config(cfg_new)
+            return cfg_new
+    
+    return cfg
 
 
 def save_config(cfg: dict) -> None:
