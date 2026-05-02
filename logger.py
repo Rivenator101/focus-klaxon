@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import json
-import os
 import random
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from colorama import Fore, Style, init as colorama_init
@@ -16,12 +15,31 @@ DATA_DIR = Path(__file__).resolve().parent
 LOG_FILE = DATA_DIR / "distractions.json"
 SESSION_FILE = DATA_DIR / "session_state.json"
 
-HAIKUS = [
-    "Fingers drift to memes\nThe deadline watches in silence\nClose Discord, coward.",
-    "Another tab opens\nYour future self sends regards\nThey are so tired.",
-    "Focus was right here\nYou traded it for pixels\nThe klaxon remembers.",
-    "The mouse runs in fear\nTabs scatter like autumn leaves\nWork still waits, patient.",
+GENERAL_HAIKUS = [
+    "A tab blooms open\nThe task list waits by the door\nCome back to your work.",
+    "Small drift in attention\nMinutes pool without a sound\nChoose what matters now.",
+    "The cursor is still\nA page asks for one more scroll\nYour draft waits for you.",
 ]
+
+SITE_HAIKUS = {
+    "chess": [
+        "Quiet opening line\nYour deadline studies endgames\nReturn to the board.",
+        "Knights cross midnight squares\nA project clock keeps moving\nMake the next move count.",
+    ],
+    "discord": [
+        "Soft pings in the dark\nYour unfinished thought is near\nProtect the next hour.",
+        "Voices fill the room\nYour own page is still blank here\nWrite one steady line.",
+    ],
+    "youtube": [
+        "One video rolls\nThen another, then another\nClose the loop, begin.",
+    ],
+    "reddit": [
+        "Thread after thread turns\nThe work you meant to finish\nWaits in another tab.",
+    ],
+    "social": [
+        "A feed keeps moving\nYour real life moves more slowly\nPick the lasting thing.",
+    ],
+}
 
 
 def _init_log() -> None:
@@ -50,8 +68,77 @@ def get_logs_for_day(day: date) -> list[dict]:
     return [d for d in data if d.get("session_id") == key]
 
 
-def random_haiku() -> str:
-    return random.choice(HAIKUS)
+def count_recent_distractions(hours: int = 1) -> int:
+    """Count distraction incidents in the recent rolling window."""
+    _init_log()
+    data = json.loads(LOG_FILE.read_text(encoding="utf-8"))
+    cutoff = datetime.now() - timedelta(hours=hours)
+    count = 0
+    for row in data:
+        ts = row.get("timestamp")
+        note = row.get("note")
+        if not ts or note != "warn_popup":
+            continue
+        try:
+            dt = datetime.fromisoformat(str(ts))
+        except ValueError:
+            continue
+        if dt >= cutoff:
+            count += 1
+    return count
+
+
+def _site_bucket(site: str) -> str:
+    s = site.lower()
+    if "chess" in s:
+        return "chess"
+    if "discord" in s:
+        return "discord"
+    if "youtube" in s:
+        return "youtube"
+    if "reddit" in s:
+        return "reddit"
+    if any(x in s for x in ["twitter", "x.com", "tiktok", "instagram", "facebook"]):
+        return "social"
+    return "general"
+
+
+def _time_line(hour: int) -> str:
+    if hour < 6:
+        return "Late night window light"
+    if hour < 12:
+        return "Morning air is clear"
+    if hour < 18:
+        return "Afternoon mind drift"
+    return "Evening focus thins"
+
+
+def _phase_line(note: str | None) -> str:
+    if note == "warn_popup":
+        return "A quiet warning lands"
+    if note == "mouse_chaos":
+        return "The cursor starts to dance"
+    if note == "auto_close":
+        return "The tab closes itself"
+    return "A small detour appears"
+
+
+def personalized_haiku(site: str, note: str | None = None) -> str:
+    """Create a context-aware haiku from site + phase + repetition + time."""
+    now = datetime.now()
+    today_entries = get_logs_for_day(date.today())
+    site_count = sum(1 for e in today_entries if str(e.get("site", "")).lower() == site.lower())
+    repeat_line = (
+        "First slip today"
+        if site_count <= 1
+        else f"{site_count}th return to {site}"
+    )
+    bucket = _site_bucket(site)
+    pool = SITE_HAIKUS.get(bucket, GENERAL_HAIKUS)
+    base = random.choice(pool)
+    custom = f"{_time_line(now.hour)}\n{_phase_line(note)}\n{repeat_line}"
+    # Keep most lines poetic; use context-aware version occasionally for personalization.
+    return custom if random.random() < 0.35 else base
 
 
 def _count_by_site(entries: list[dict]) -> dict[str, int]:
@@ -96,7 +183,7 @@ def generate_report() -> None:
     print(f"Top trigger: {top}")
     print(f"Trend: {get_improvement_message(n)}")
     if n >= 3:
-        print(f"\n{Fore.MAGENTA}{random_haiku()}{Style.RESET_ALL}")
+        print(f"\n{Fore.MAGENTA}{personalized_haiku(top, 'auto_close')}{Style.RESET_ALL}")
     print("=" * 50 + "\n")
 
 

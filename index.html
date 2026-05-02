@@ -23,6 +23,49 @@
       align-items: center;
       padding: 2rem 1rem;
     }
+    body.glitch-mode {
+      animation: page-shake 0.08s linear 0s 20;
+      filter: contrast(1.15) saturate(1.2);
+    }
+    body.glitch-mode::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        repeating-linear-gradient(
+          0deg,
+          rgba(0, 255, 140, 0.08) 0,
+          rgba(0, 255, 140, 0.08) 2px,
+          rgba(0, 0, 0, 0.08) 2px,
+          rgba(0, 0, 0, 0.08) 4px
+        );
+      mix-blend-mode: screen;
+      animation: scanlines 0.8s linear infinite;
+      z-index: 9999;
+    }
+    body.glitch-mode::after {
+      content: "RADIOACTIVE MODE";
+      position: fixed;
+      right: 1rem;
+      top: 1rem;
+      font-size: 0.75rem;
+      color: #00ff80;
+      letter-spacing: 0.12em;
+      text-shadow: 0 0 8px rgba(0, 255, 128, 0.8);
+      z-index: 10000;
+    }
+    @keyframes scanlines {
+      from { transform: translateY(-6px); }
+      to { transform: translateY(6px); }
+    }
+    @keyframes page-shake {
+      0% { transform: translate(0px, 0px); }
+      25% { transform: translate(1px, -1px); }
+      50% { transform: translate(-1px, 1px); }
+      75% { transform: translate(1px, 1px); }
+      100% { transform: translate(0px, 0px); }
+    }
     h1 {
       font-size: clamp(1.25rem, 4vw, 2rem);
       color: var(--accent);
@@ -92,11 +135,18 @@
     <div id="confession-log"></div>
   </div>
 
-  <footer>Focus Klaxon · brain goes brrrr <code>https://rivenator101.github.io/focus-klaxon/</code> in config.json</footer>
+  <div class="panel">
+    <h2>Auto event feed</h2>
+    <p style="margin: 0; font-size: 0.9rem;">Events pushed by the CLI watcher are stored here automatically.</p>
+    <div id="auto-event-log" style="margin-top: 1rem; font-size: 0.8rem; color: var(--muted); white-space: pre-wrap;"></div>
+  </div>
+
+  <footer>Focus Klaxon · paste this on GitHub Pages and set <code>work_url</code> in config.json</footer>
 
   <script>
     const TASKS_KEY = "focus_klaxon_tasks";
     const CONFESSION_KEY = "focus_klaxon_confessions";
+    const AUTO_EVENT_KEY = "focus_klaxon_auto_events";
 
     function loadTasks() {
       try {
@@ -150,6 +200,60 @@
       document.getElementById("confession-log").textContent = next.trim();
     }
 
+    function readAutoEvents() {
+      const raw = localStorage.getItem(AUTO_EVENT_KEY);
+      if (!raw) return [];
+      try {
+        return JSON.parse(raw);
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function saveAutoEvents(items) {
+      localStorage.setItem(AUTO_EVENT_KEY, JSON.stringify(items.slice(-100)));
+    }
+
+    function renderAutoEvents() {
+      const items = readAutoEvents();
+      const lines = items.map((e) => `${e.timestamp} — ${e.site} — ${e.phase}`);
+      document.getElementById("auto-event-log").textContent = lines.join("\n");
+    }
+
+    function ingestCliRedirectEvents() {
+      const params = new URLSearchParams(window.location.search);
+      const site = params.get("fk_site");
+      const phasesRaw = params.get("fk_phases");
+      const ts = params.get("fk_ts");
+      if (!site || !phasesRaw || !ts) return;
+
+      const phases = phasesRaw.split(",").map((x) => x.trim()).filter(Boolean);
+      const items = readAutoEvents();
+      const exists = items.some((e) => e.id === `${site}:${ts}:${e.phase}`);
+      if (!exists) {
+        const nowIso = new Date(Number(ts) * 1000).toISOString().slice(0, 19);
+        for (const phase of phases) {
+          items.push({
+            id: `${site}:${ts}:${phase}`,
+            timestamp: nowIso,
+            site,
+            phase
+          });
+        }
+        saveAutoEvents(items);
+      }
+      renderAutoEvents();
+    }
+
+    function applyGlitchFromParams() {
+      const params = new URLSearchParams(window.location.search);
+      const glitch = params.get("fk_glitch");
+      const phases = (params.get("fk_phases") || "").split(",").map((x) => x.trim());
+      if (glitch !== "1" && !phases.includes("mouse") && !phases.includes("auto_close")) return;
+      document.body.classList.add("glitch-mode");
+      setTimeout(() => document.body.classList.remove("glitch-mode"), 4500);
+    }
+
     document.getElementById("confess").addEventListener("click", () => {
       const how = prompt("How did you get distracted?");
       const line = new Date().toISOString().slice(0, 19) + " — " + (how || "(no comment)");
@@ -159,6 +263,9 @@
     (function initLog() {
       const prev = localStorage.getItem(CONFESSION_KEY);
       if (prev) document.getElementById("confession-log").textContent = prev.trim();
+      ingestCliRedirectEvents();
+      renderAutoEvents();
+      applyGlitchFromParams();
     })();
   </script>
 </body>

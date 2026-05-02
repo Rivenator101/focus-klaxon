@@ -12,7 +12,7 @@
     "facebook",
     "netflix"
   ],
-  "work_url": "https://<your-github-username>.github.io/focus-klaxon/",
+  "work_url": "https://rivenator101.github.io/focus-klaxon/",
   "safe_windows": [
     "visual studio",
     "cursor",
@@ -28,6 +28,10 @@
     "focus klaxon"
   ],
   "warning_seconds": 5,
+  "mouse_crazy_seconds": 20,
   "grace_after_mouse_seconds": 4,
-  "mouse_crazy_enabled": true
+  "mouse_crazy_enabled": true,
+  "repeat_nudge_enabled": true,
+  "repeat_nudge_url": "https://docs.google.com/document/",
+  "repeat_nudge_min_per_hour": 2
 }

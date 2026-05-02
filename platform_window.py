@@ -223,11 +223,10 @@ def show_warning_popup(site: str) -> None:
                 [
                     "osascript",
                     "-e",
-                    f'display dialog "{safe}" buttons {{"OK"}} default button 1 '
-                    f"with title \"Focus Klaxon\" with icon caution",
+                    f'display notification "{safe}" with title "Focus Klaxon"',
                 ],
                 check=False,
-                timeout=30,
+                timeout=3,
             )
         except (OSError, subprocess.TimeoutExpired):
             print(msg)
@@ -240,6 +239,42 @@ def show_warning_popup(site: str) -> None:
             )
         except OSError:
             print(msg)
+
+
+def show_info_popup(title: str, message: str) -> None:
+    """Best-effort, non-blocking notification popup."""
+    system = platform.system()
+    if system == "Windows":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(0, message, title, 0x40)
+        except Exception:
+            print(f"{title}: {message}")
+    elif system == "Darwin":
+        try:
+            safe_title = title.replace("\\", "\\\\").replace('"', '\\"')
+            safe_msg = message.replace("\\", "\\\\").replace('"', '\\"')
+            subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    f'display notification "{safe_msg}" with title "{safe_title}"',
+                ],
+                check=False,
+                timeout=3,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            print(f"{title}: {message}")
+    else:
+        try:
+            subprocess.run(
+                ["zenity", "--info", "--title", title, "--text", message],
+                check=False,
+                timeout=5,
+            )
+        except OSError:
+            print(f"{title}: {message}")
 
 
 if __name__ == "__main__":  # quick manual test

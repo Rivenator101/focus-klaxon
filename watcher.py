@@ -12,12 +12,24 @@ import time
 import webbrowser
 from pathlib import Path
 from typing import Literal
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import pyautogui
 from colorama import Fore, Style, init as colorama_init
 
-from logger import generate_report, log_distraction, random_haiku, session_start
-from platform_window import get_active_context_text, show_warning_popup, try_close_foreground_window
+from logger import (
+    count_recent_distractions,
+    generate_report,
+    log_distraction,
+    personalized_haiku,
+    session_start,
+)
+from platform_window import (
+    get_active_context_text,
+    show_info_popup,
+    show_warning_popup,
+    try_close_foreground_window,
+)
 
 colorama_init(autoreset=True)
 
@@ -72,32 +84,73 @@ def wait_while_distraction(
     return still_on_trigger(site, triggers, safe)
 
 
-def mouse_go_crazy() -> None:
+def mouse_go_crazy(duration_seconds: float) -> None:
     print(f"{Fore.YELLOW}   🐁 MOUSE PUNISHMENT INITIATED 🐁{Style.RESET_ALL}")
     screen_w, screen_h = pyautogui.size()
     start_x, start_y = pyautogui.position()
-
-    for wave in range(3):
-        for _ in range(20):
-            pyautogui.moveRel(
-                (wave + 1) * 12 * (1 if _ % 2 == 0 else -1),
-                (wave + 1) * 12 * (1 if _ % 3 == 0 else -1),
-                duration=0.02,
-            )
+    deadline = time.monotonic() + max(0.5, duration_seconds)
+    wave = 0
+    while time.monotonic() < deadline:
+        wave += 1
+        intensity = 10 + (wave % 4) * 5
         for _ in range(10):
             pyautogui.moveRel(
-                random.randint(-35, 35),
-                random.randint(-35, 35),
+                intensity * (1 if _ % 2 == 0 else -1),
+                intensity * (1 if _ % 3 == 0 else -1),
+                duration=0.02,
+            )
+        for _ in range(6):
+            pyautogui.moveRel(
+                random.randint(-intensity * 2, intensity * 2),
+                random.randint(-intensity * 2, intensity * 2),
                 duration=0.01,
             )
-        if wave == 1:
-            pyautogui.moveTo(10, 10, duration=0.15)
-            pyautogui.moveTo(screen_w - 10, 10, duration=0.15)
-            pyautogui.moveTo(screen_w - 10, screen_h - 10, duration=0.15)
-            pyautogui.moveTo(10, screen_h - 10, duration=0.15)
+        if wave % 3 == 0:
+            pyautogui.moveTo(10, 10, duration=0.08)
+            pyautogui.moveTo(screen_w - 10, 10, duration=0.08)
+            pyautogui.moveTo(screen_w - 10, screen_h - 10, duration=0.08)
+            pyautogui.moveTo(10, screen_h - 10, duration=0.08)
 
     pyautogui.moveTo(start_x, start_y, duration=0.25)
     print(f"{Fore.GREEN}   🐁 Mouse restored. Behave.{Style.RESET_ALL}")
+
+
+def build_dashboard_url(work_url: str, site: str, phases: list[str]) -> str:
+    """
+    Add auto-log payload for dashboard so it can store events on load.
+    Keeps existing query params.
+    """
+    parsed = urlparse(work_url)
+    params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    params["fk_site"] = site
+    params["fk_phases"] = ",".join(phases)
+    params["fk_ts"] = str(int(time.time()))
+    if "mouse" in phases or "auto_close" in phases:
+        params["fk_glitch"] = "1"
+    query = urlencode(params)
+    return urlunparse(
+        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, query, parsed.fragment)
+    )
+
+
+def trigger_repeat_nudge(nudge_url: str, site: str, per_hour_count: int) -> None:
+    """
+    Opens a nudge URL and types a warning message if possible.
+    Works best when nudge_url is a Google Doc that's already editable.
+    """
+    msg = (
+        f"Focus check: return to work now. "
+        f"You got distracted {per_hour_count} times in the past hour ({site})."
+    )
+    show_info_popup("Focus Klaxon", "Repeat distraction detected. Launching nudge mode.")
+    try:
+        webbrowser.open(nudge_url)
+        time.sleep(1.8)
+        # This types into whichever field has focus.
+        pyautogui.typewrite(msg, interval=0.01)
+        pyautogui.press("enter")
+    except Exception:
+        pass
 
 
 def run_watcher() -> None:
@@ -108,6 +161,10 @@ def run_watcher() -> None:
     warn_s = float(cfg.get("warning_seconds", 5))
     grace_s = float(cfg.get("grace_after_mouse_seconds", 4))
     mouse_on = bool(cfg.get("mouse_crazy_enabled", True))
+    mouse_s = float(cfg.get("mouse_crazy_seconds", 12))
+    nudge_on = bool(cfg.get("repeat_nudge_enabled", True))
+    nudge_url = str(cfg.get("repeat_nudge_url", work_url))
+    nudge_min = int(cfg.get("repeat_nudge_min_per_hour", 2))
 
     session_start()
 
@@ -117,7 +174,7 @@ def run_watcher() -> None:
     print(f"Watching titles for: {', '.join(triggers)}")
     print(f"Work / focus URL: {work_url}")
     print(f"1) Popup + {warn_s:.0f}s to comply")
-    print("2) Mouse chaos (if still distracted)")
+    print(f"2) Mouse chaos for {mouse_s:.0f}s (if still distracted)")
     print("3) Close foreground + open focus URL")
     print(f"{Fore.YELLOW}Ctrl+C{Style.RESET_ALL} stops watcher and prints a report.\n")
 
@@ -155,10 +212,16 @@ def run_watcher() -> None:
 
             if phase == "warn":
                 if wait_while_distraction(active_site, triggers, safe, warn_s):
+                    log_distraction(active_site, note="warn_popup")
                     phase = "mouse"
+                    recent_count = count_recent_distractions(1)
+                    if nudge_on and recent_count >= nudge_min:
+                        trigger_repeat_nudge(nudge_url, active_site, recent_count)
                     if mouse_on:
                         print(f"\n{Fore.RED}   Still there? Mouse chaos.{Style.RESET_ALL}")
-                        mouse_go_crazy()
+                        show_info_popup("Focus Klaxon", "Mouse of Doom: Activated")
+                        mouse_go_crazy(mouse_s)
+                        log_distraction(active_site, note="mouse_chaos")
                     else:
                         print(
                             f"\n{Fore.YELLOW}   Mouse chaos disabled — final grace: {grace_s:.0f}s.{Style.RESET_ALL}"
@@ -179,15 +242,17 @@ def run_watcher() -> None:
 
             if phase == "close":
                 print(f"\n{Fore.RED}💀 Closing foreground window. Opening focus URL.{Style.RESET_ALL}")
+                show_info_popup("Focus Klaxon", "Final step: closing distraction tab now")
                 log_distraction(active_site, note="auto_close")
                 closed = try_close_foreground_window()
                 if not closed:
                     print("   (Close may have failed — browser security varies.)")
                 try:
-                    webbrowser.open(work_url)
+                    phases = ["warn", "auto_close"] if not mouse_on else ["warn", "mouse", "auto_close"]
+                    webbrowser.open(build_dashboard_url(work_url, active_site, phases))
                 except Exception:
                     pass
-                print(f"\n{Fore.MAGENTA}{random_haiku()}{Style.RESET_ALL}\n")
+                print(f"\n{Fore.MAGENTA}{personalized_haiku(active_site, 'auto_close')}{Style.RESET_ALL}\n")
                 phase = "idle"
                 active_site = None
                 time.sleep(1.5)
