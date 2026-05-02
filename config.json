@@ -1,0 +1,33 @@
+{
+  "trigger_sites": [
+    "chess.com",
+    "discord",
+    "reddit",
+    "twitter",
+    "x.com",
+    "youtube",
+    "twitch",
+    "tiktok",
+    "instagram",
+    "facebook",
+    "netflix"
+  ],
+  "work_url": "https://<your-github-username>.github.io/focus-klaxon/",
+  "safe_windows": [
+    "visual studio",
+    "cursor",
+    "code",
+    "terminal",
+    "iterm",
+    "vscode",
+    "pycharm",
+    "github",
+    "docs.google",
+    "mail.google",
+    "notion",
+    "focus klaxon"
+  ],
+  "warning_seconds": 5,
+  "grace_after_mouse_seconds": 4,
+  "mouse_crazy_enabled": true
+}

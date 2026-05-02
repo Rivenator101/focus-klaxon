@@ -1,0 +1,7 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+distractions.json
+session_state.json

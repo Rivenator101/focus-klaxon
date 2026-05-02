@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Focus Klaxon — You Should Be Working</title>
+  <style>
+    :root {
+      --bg: #12121a;
+      --fg: #e8e6e3;
+      --accent: #ff6b6b;
+      --muted: #6b6b80;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+    h1 {
+      font-size: clamp(1.25rem, 4vw, 2rem);
+      color: var(--accent);
+      text-align: center;
+      letter-spacing: 0.04em;
+    }
+    .panel {
+      max-width: 36rem;
+      width: 100%;
+      border: 1px solid #2a2a38;
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      margin-top: 1.5rem;
+      background: #1a1a26;
+    }
+    .panel h2 {
+      margin: 0 0 0.75rem;
+      font-size: 0.9rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+    ul { margin: 0; padding-left: 1.2rem; }
+    li { margin: 0.5rem 0; }
+    button {
+      font-family: inherit;
+      background: var(--accent);
+      color: #111;
+      border: none;
+      padding: 0.6rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      margin-top: 0.75rem;
+    }
+    button:hover { filter: brightness(1.08); }
+    #confession-log {
+      margin-top: 1rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+      white-space: pre-wrap;
+    }
+    footer {
+      margin-top: 2rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔨 YOU SHOULD BE WORKING 🔨</h1>
+  <p style="color: var(--muted); text-align: center; max-width: 28rem;">
+    This tab exists because something else stole your attention. Edit your priorities below — they stay in this browser only.
+  </p>
+
+  <div class="panel">
+    <h2>Priority tasks</h2>
+    <ul id="tasks"></ul>
+    <button type="button" id="add-task">Add task</button>
+  </div>
+
+  <div class="panel">
+    <h2>Distraction confessional</h2>
+    <p style="margin: 0; font-size: 0.9rem;">Log what happened (local only — copy into your demo if you want).</p>
+    <button type="button" id="confess">I got distracted again</button>
+    <div id="confession-log"></div>
+  </div>
+
+  <footer>Focus Klaxon · paste this on GitHub Pages and set <code>work_url</code> in config.json</footer>
+
+  <script>
+    const TASKS_KEY = "focus_klaxon_tasks";
+    const CONFESSION_KEY = "focus_klaxon_confessions";
+
+    function loadTasks() {
+      try {
+        const raw = localStorage.getItem(TASKS_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch (_) {}
+      return [
+        "Ship Focus Klaxon MVP",
+        "Practice 60s hackathon demo",
+        "Sleep (after you win)"
+      ];
+    }
+
+    function saveTasks(tasks) {
+      localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+    }
+
+    function renderTasks(tasks) {
+      const ul = document.getElementById("tasks");
+      ul.innerHTML = "";
+      tasks.forEach((t, i) => {
+        const li = document.createElement("li");
+        li.textContent = t;
+        li.title = "Click to remove";
+        li.style.cursor = "pointer";
+        li.addEventListener("click", () => {
+          tasks.splice(i, 1);
+          saveTasks(tasks);
+          renderTasks(tasks);
+        });
+        ul.appendChild(li);
+      });
+    }
+
+    let tasks = loadTasks();
+    renderTasks(tasks);
+
+    document.getElementById("add-task").addEventListener("click", () => {
+      const t = prompt("New priority:");
+      if (t && t.trim()) {
+        tasks.push(t.trim());
+        saveTasks(tasks);
+        renderTasks(tasks);
+      }
+    });
+
+    function appendConfession(line) {
+      const prev = localStorage.getItem(CONFESSION_KEY) || "";
+      const next = prev + line + "\n";
+      localStorage.setItem(CONFESSION_KEY, next);
+      document.getElementById("confession-log").textContent = next.trim();
+    }
+
+    document.getElementById("confess").addEventListener("click", () => {
+      const how = prompt("How did you get distracted?");
+      const line = new Date().toISOString().slice(0, 19) + " — " + (how || "(no comment)");
+      appendConfession(line);
+    });
+
+    (function initLog() {
+      const prev = localStorage.getItem(CONFESSION_KEY);
+      if (prev) document.getElementById("confession-log").textContent = prev.trim();
+    })();
+  </script>
+</body>
+</html>
