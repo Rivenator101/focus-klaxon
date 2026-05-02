@@ -66,35 +66,38 @@ def _load_json_safe(path: Path, default: list | dict | None = None) -> list | di
 def log_distraction(site_name: str, note: str | None = None) -> None:
     """Log a distraction event with atomic file I/O (using file locking)."""
     _init_log()
+    f = None
     try:
-        with open(LOG_FILE, "r+", encoding="utf-8") as f:
-            # Acquire exclusive lock to prevent race conditions
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            try:
-                data = json.load(f)
-            except json.JSONDecodeError:
-                data = []
-            
-            entry = {
-                "timestamp": datetime.now().isoformat(timespec="seconds"),
-                "site": site_name,
-                "session_id": date.today().isoformat(),
-                "note": note,
-            }
-            data.append(entry)
-            
-            # Write back atomically
-            f.seek(0)
-            f.truncate()
-            json.dump(data, f, indent=2)
+        f = open(LOG_FILE, "r+", encoding="utf-8")
+        # Acquire exclusive lock to prevent race conditions
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            data = []
+        
+        entry = {
+            "timestamp": datetime.now().isoformat(timespec="seconds"),
+            "site": site_name,
+            "session_id": date.today().isoformat(),
+            "note": note,
+        }
+        data.append(entry)
+        
+        # Write back atomically
+        f.seek(0)
+        f.truncate()
+        json.dump(data, f, indent=2)
     except OSError as e:
         print(f"{Fore.RED}❌ Failed to log distraction: {e}{Style.RESET_ALL}", file=sys.stderr)
         return
     finally:
-        try:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # type: ignore
-        except (OSError, NameError):
-            pass
+        if f is not None:
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # type: ignore
+                f.close()
+            except (OSError, NameError):
+                pass
     
     print(f"{Fore.RED}⚠️  Logged distraction:{Style.RESET_ALL} {site_name}")
 
