@@ -124,32 +124,52 @@ def wait_while_distraction(
     return still_on_trigger(site, triggers, safe)
 
 
-def mouse_go_crazy(duration_seconds: float) -> None:
+def mouse_go_crazy(duration_seconds: float, intensity_level: int = 1) -> None:
+    """Make mouse go berserk. intensity_level: 1=normal, 2=aggressive, 3=NUCLEAR"""
     print(f"{Fore.YELLOW}   🐁 MOUSE PUNISHMENT INITIATED 🐁{Style.RESET_ALL}")
     screen_w, screen_h = pyautogui.size()
     start_x, start_y = pyautogui.position()
     deadline = time.monotonic() + max(0.5, duration_seconds)
     wave = 0
+    
+    intensity_multiplier = [1, 1.5, 2.5][min(intensity_level - 1, 2)]
+    move_delay = [0.02, 0.01, 0.005][min(intensity_level - 1, 2)]
+    random_move_delay = [0.01, 0.005, 0.002][min(intensity_level - 1, 2)]
+    
     while time.monotonic() < deadline:
         wave += 1
-        intensity = 10 + (wave % 4) * 5
+        intensity = int((10 + (wave % 4) * 5) * intensity_multiplier)
+        
+        # Straight line chaos
         for _ in range(10):
             pyautogui.moveRel(
                 intensity * (1 if _ % 2 == 0 else -1),
                 intensity * (1 if _ % 3 == 0 else -1),
-                duration=0.02,
+                duration=move_delay,
             )
-        for _ in range(6):
+        
+        # Random chaos
+        random_iterations = [6, 12, 20][min(intensity_level - 1, 2)]
+        for _ in range(random_iterations):
             pyautogui.moveRel(
                 random.randint(-intensity * 2, intensity * 2),
                 random.randint(-intensity * 2, intensity * 2),
-                duration=0.01,
+                duration=random_move_delay,
             )
+        
+        # Corner bouncing (every 3 waves)
         if wave % 3 == 0:
             pyautogui.moveTo(10, 10, duration=0.08)
             pyautogui.moveTo(screen_w - 10, 10, duration=0.08)
             pyautogui.moveTo(screen_w - 10, screen_h - 10, duration=0.08)
             pyautogui.moveTo(10, screen_h - 10, duration=0.08)
+        
+        # NUCLEAR: click things randomly to close dialogs
+        if intensity_level >= 3 and wave % 5 == 0:
+            try:
+                pyautogui.click(random.randint(100, screen_w - 100), random.randint(100, screen_h - 100))
+            except Exception:
+                pass
 
     pyautogui.moveTo(start_x, start_y, duration=0.25)
     print(f"{Fore.GREEN}   🐁 Mouse restored. Behave.{Style.RESET_ALL}")
@@ -173,25 +193,51 @@ def build_dashboard_url(work_url: str, site: str, phases: list[str]) -> str:
     )
 
 
-def trigger_repeat_nudge(nudge_url: str, site: str, per_hour_count: int) -> None:
+def trigger_repeat_nudge(nudge_url: str, site: str, per_hour_count: int, hijack_mode: bool = False) -> None:
     """
-    Opens a nudge URL and types a warning message if possible.
-    Works best when nudge_url is a Google Doc that's already editable.
+    Opens a nudge URL and types an aggressive warning message.
+    If hijack_mode=True, adds keyboard smashing and extra aggression.
     """
-    msg = (
-        f"Focus check: return to work now. "
-        f"You got distracted {per_hour_count} times in the past hour ({site})."
-    )
-    show_info_popup("Focus Klaxon", "Repeat distraction detected. Launching nudge mode.")
+    if per_hour_count >= 3:
+        # NUCLEAR MODE: User is a repeat offender
+        threats = [
+            f"GET BACK TO YOUR FUCKING WORK NOW. You got distracted {per_hour_count} times in the past hour, you absolute unit.",
+            f"BRRRRR. {per_hour_count} times??? {per_hour_count} TIMES?! Return to focus immediately.",
+            f"Listen. You've been here {per_hour_count} times in one hour. This is unhinged behavior. Back. To. Work.",
+            f"CRIMINAL ACTIVITY DETECTED. Distraction streak: {per_hour_count} in 60 minutes. STOP.",
+        ]
+        msg = random.choice(threats)
+        popup_msg = f"REPEAT OFFENDER ALERT: {per_hour_count} distractions in 1 hour. Launching aggressive nudge."
+    else:
+        msg = (
+            f"Focus check: you got distracted {per_hour_count} time{'s' if per_hour_count != 1 else ''} "
+            f"in the past hour. Get back to {site} if you must, but open the work doc first."
+        )
+        popup_msg = f"Distraction detected ({per_hour_count}x/hr). Opening nudge doc..."
+    
+    show_info_popup("Focus Klaxon", popup_msg)
     try:
         if not nudge_url or not nudge_url.strip():
             print(f"{Fore.YELLOW}⚠️  Nudge URL not configured{Style.RESET_ALL}", file=sys.stderr)
             return
         webbrowser.open(nudge_url)
-        time.sleep(1.8)
-        # This types into whichever field has focus.
+        time.sleep(2.0)
+        
+        # Type the threat message
         pyautogui.typewrite(msg, interval=0.01)
         pyautogui.press("enter")
+        
+        # If nuclear mode, add keyboard smashing for dramatic effect
+        if hijack_mode and per_hour_count >= 3:
+            time.sleep(0.5)
+            print(f"{Fore.RED}   💀 KEYBOARD SMASH INCOMING 💀{Style.RESET_ALL}")
+            smash_chars = "!@#$%^&*()" * 2
+            for char in smash_chars:
+                pyautogui.typewrite(char, interval=0.02)
+            pyautogui.press("enter")
+            pyautogui.typewrite("NOW FOCUS.", interval=0.03)
+            time.sleep(0.3)
+            
     except (OSError, pyautogui.FailSafeException) as e:
         print(f"{Fore.YELLOW}⚠️  Nudge mode failed: {e}{Style.RESET_ALL}", file=sys.stderr)
     except Exception as e:
@@ -231,6 +277,8 @@ def run_watcher() -> None:
 
     phase: Phase = "idle"
     active_site: str | None = None
+    repeat_violations: dict[str, int] = {}  # Track repeat offenders
+    last_distraction_time: dict[str, float] = {}  # Track when we last caught each site
 
     try:
         while True:
@@ -244,6 +292,19 @@ def run_watcher() -> None:
                 if not site:
                     time.sleep(0.6)
                     continue
+                
+                # Check if this is a REPEAT OFFENSE (caught within 30 seconds of leaving)
+                now = time.time()
+                if site in last_distraction_time and (now - last_distraction_time[site]) < 30:
+                    repeat_violations[site] = repeat_violations.get(site, 0) + 1
+                    recent_count = count_recent_distractions(1)
+                    
+                    if recent_count >= nudge_min and nudge_on:
+                        print(f"\n{Fore.RED}🚨 REPEAT OFFENSE! You returned to {site}! 🚨{Style.RESET_ALL}")
+                        print(f"   Escalating to NUCLEAR nudge mode...")
+                        trigger_repeat_nudge(nudge_url, site, recent_count, hijack_mode=True)
+                        time.sleep(1.0)
+                
                 active_site = site
                 phase = "warn"
                 print(f"\n{Fore.RED}\a⚠️  [{site}] detected in active browser context.{Style.RESET_ALL}")
@@ -269,9 +330,19 @@ def run_watcher() -> None:
                     if nudge_on and recent_count >= nudge_min:
                         trigger_repeat_nudge(nudge_url, active_site, recent_count)
                     if mouse_on:
-                        print(f"\n{Fore.RED}   Still there? Mouse chaos.{Style.RESET_ALL}")
+                        # Use higher intensity if this is a repeat offender
+                        intensity = 1
+                        if active_site in repeat_violations and repeat_violations[active_site] >= 2:
+                            intensity = 3
+                            print(f"\n{Fore.RED}   REPEAT OFFENDER MODE: MAXIMUM MOUSE CHAOS{Style.RESET_ALL}")
+                        elif recent_count >= 3:
+                            intensity = 2
+                            print(f"\n{Fore.RED}   Still there? Mouse chaos (AGGRESSIVE).{Style.RESET_ALL}")
+                        else:
+                            print(f"\n{Fore.RED}   Still there? Mouse chaos.{Style.RESET_ALL}")
+                        
                         show_info_popup("Focus Klaxon", "Mouse of Doom: Activated")
-                        mouse_go_crazy(mouse_s)
+                        mouse_go_crazy(mouse_s, intensity_level=intensity)
                         log_distraction(active_site, note="mouse_chaos")
                     else:
                         print(
@@ -305,6 +376,9 @@ def run_watcher() -> None:
                 except (OSError, ValueError) as e:
                     print(f"{Fore.YELLOW}⚠️  Could not open dashboard: {e}{Style.RESET_ALL}", file=sys.stderr)
                 print(f"\n{Fore.MAGENTA}{personalized_haiku(active_site, 'auto_close')}{Style.RESET_ALL}\n")
+                # Track when we last caught this site (for repeat offense detection)
+                if active_site:
+                    last_distraction_time[active_site] = time.time()
                 phase = "idle"
                 active_site = None
                 time.sleep(1.5)
