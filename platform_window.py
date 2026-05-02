@@ -174,26 +174,66 @@ def try_close_foreground_window() -> bool:
         except Exception:
             return False
     if system == "Darwin":
+        # Try multiple aggressive methods on macOS
+        methods_tried = 0
+        success = False
+        
+        # Method 1: Try pygetwindow first
         try:
             import pygetwindow as gw  # type: ignore
-
             w = gw.getActiveWindow()
             if w:
                 w.close()
-                return True
+                success = True
         except Exception:
             pass
-        # Fallback: Cmd+W on macOS (closes tab in many browsers)
-        try:
-            script = r"""
+        methods_tried += 1
+        
+        # Method 2: Cmd+W (close tab)
+        if not success:
+            try:
+                script = r'''
 tell application "System Events"
     keystroke "w" using command down
 end tell
-"""
-            subprocess.run(["osascript", "-e", script], check=False, timeout=3)
-            return True
-        except (OSError, subprocess.TimeoutExpired):
-            return False
+'''
+                subprocess.run(["osascript", "-e", script], check=False, timeout=2)
+                success = True
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        methods_tried += 1
+        
+        # Method 3: Cmd+Q (quit app) - more aggressive
+        if not success:
+            try:
+                script = r'''
+tell application "System Events"
+    keystroke "q" using command down
+end tell
+'''
+                subprocess.run(["osascript", "-e", script], check=False, timeout=2)
+                success = True
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        methods_tried += 1
+        
+        # Method 4: Force quit via AppleScript
+        if not success:
+            try:
+                script = r'''
+tell application "System Events"
+    set frontApp to name of first application process whose frontmost is true
+    tell application frontApp to quit
+end tell
+'''
+                subprocess.run(["osascript", "-e", script], check=False, timeout=3)
+                success = True
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        methods_tried += 1
+        
+        return success
+        
     # Linux: try xdotool close
     try:
         subprocess.run(
