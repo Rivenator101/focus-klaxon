@@ -363,12 +363,19 @@ def run_watcher() -> None:
                 continue
 
             if phase == "close":
-                print(f"\n{Fore.RED}💀 Closing foreground window. Opening focus URL.{Style.RESET_ALL}")
+                print(f"\n{Fore.RED}💀 Closing foreground window NOW.{Style.RESET_ALL}")
                 show_info_popup("Focus Klaxon", "Final step: closing distraction tab now")
                 log_distraction(active_site, note="auto_close")
                 closed = try_close_foreground_window()
                 if not closed:
                     print("   (Close may have failed — browser security varies.)")
+                else:
+                    print(f"{Fore.GREEN}   ✅ Tab closed successfully.{Style.RESET_ALL}")
+                
+                # Small delay to ensure tab is closed before opening doc
+                time.sleep(0.5)
+                
+                print(f"\n{Fore.CYAN}📝 Opening punishment document...{Style.RESET_ALL}")
                 try:
                     phases = ["warn", "auto_close"] if not mouse_on else ["warn", "mouse", "auto_close"]
                     dashboard_url = build_dashboard_url(work_url, active_site, phases)
