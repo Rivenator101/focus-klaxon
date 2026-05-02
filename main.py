@@ -49,6 +49,13 @@ def add_trigger_site() -> None:
     if not site:
         print("Empty input — cancelled.")
         return
+    if len(site) > 100:
+        print(f"{Fore.YELLOW}Site too long (max 100 chars).{Style.RESET_ALL}")
+        return
+    # Validate: alphanumeric, dots, hyphens, slashes, colons, spaces
+    if not all(c.isalnum() or c in ".-_/: " for c in site):
+        print(f"{Fore.YELLOW}Invalid characters. Use alphanumeric, dots, hyphens, slashes, colons, spaces.{Style.RESET_ALL}")
+        return
     cfg = load_config()
     sites: list[str] = cfg.setdefault("trigger_sites", [])
     if site not in sites:
@@ -61,6 +68,9 @@ def set_work_url() -> None:
     url = input("Focus / work URL (dashboard or doc): ").strip()
     if not url:
         print("Empty input — cancelled.")
+        return
+    if len(url) > 2048:
+        print(f"{Fore.YELLOW}URL too long (max 2048 chars).{Style.RESET_ALL}")
         return
     cfg = load_config()
     cfg["work_url"] = url
@@ -102,9 +112,12 @@ def bribe_ghost() -> None:
         f"{personalized_haiku('focus', 'warn_popup')}{Style.RESET_ALL}"
     )
     try:
-        print("\a", end="")
-    except Exception:
+        print("\a", end="", flush=True)
+    except BrokenPipeError:
+        # Expected in some terminal contexts
         pass
+    except OSError as e:
+        print(f"{Fore.YELLOW}⚠️  Warning: bell sound failed: {e}{Style.RESET_ALL}", file=sys.stderr)
 
 
 def menu_loop() -> None:

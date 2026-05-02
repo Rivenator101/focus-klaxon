@@ -35,7 +35,7 @@ colorama_init(autoreset=True)
 
 CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
 
-pyautogui.FAILSAFE = False
+pyautogui.FAILSAFE = True
 
 Phase = Literal["idle", "warn", "mouse", "close"]
 
@@ -43,7 +43,34 @@ Phase = Literal["idle", "warn", "mouse", "close"]
 def load_config() -> dict:
     if not CONFIG_PATH.exists():
         raise SystemExit(f"Missing {CONFIG_PATH}")
-    return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    try:
+        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"Config JSON corrupted: {e}")
+    
+    # Validate required fields
+    required_fields = {
+        "trigger_sites": list,
+        "safe_windows": list,
+        "work_url": str,
+        "warning_seconds": (int, float),
+        "grace_after_mouse_seconds": (int, float),
+        "mouse_crazy_seconds": (int, float),
+    }
+    
+    for field, expected_type in required_fields.items():
+        if field not in cfg:
+            raise SystemExit(f"Config missing required field: {field}")
+        
+        value = cfg[field]
+        if isinstance(expected_type, tuple):
+            if not isinstance(value, expected_type):
+                raise SystemExit(f"Config '{field}' must be {expected_type}, got {type(value).__name__}")
+        else:
+            if not isinstance(value, expected_type):
+                raise SystemExit(f"Config '{field}' must be {expected_type.__name__}, got {type(value).__name__}")
+    
+    return cfg
 
 
 def match_trigger(context_lower: str, triggers: list[str]) -> str | None:
@@ -56,7 +83,8 @@ def match_trigger(context_lower: str, triggers: list[str]) -> str | None:
 
 def is_safe_window(context_lower: str, safe: list[str]) -> bool:
     for s in safe:
-        if s.lower().strip() and s.lower().strip() in context_lower:
+        key = s.lower().strip()
+        if key and key in context_lower:
             return True
     return False
 
@@ -144,13 +172,18 @@ def trigger_repeat_nudge(nudge_url: str, site: str, per_hour_count: int) -> None
     )
     show_info_popup("Focus Klaxon", "Repeat distraction detected. Launching nudge mode.")
     try:
+        if not nudge_url or not nudge_url.strip():
+            print(f"{Fore.YELLOW}⚠️  Nudge URL not configured{Style.RESET_ALL}", file=sys.stderr)
+            return
         webbrowser.open(nudge_url)
         time.sleep(1.8)
         # This types into whichever field has focus.
         pyautogui.typewrite(msg, interval=0.01)
         pyautogui.press("enter")
-    except Exception:
-        pass
+    except (OSError, pyautogui.FailSafeException) as e:
+        print(f"{Fore.YELLOW}⚠️  Nudge mode failed: {e}{Style.RESET_ALL}", file=sys.stderr)
+    except Exception as e:
+        print(f"{Fore.YELLOW}⚠️  Unexpected error in nudge mode: {e}{Style.RESET_ALL}", file=sys.stderr)
 
 
 def run_watcher() -> None:
@@ -158,10 +191,16 @@ def run_watcher() -> None:
     triggers = cfg.get("trigger_sites", [])
     safe = cfg.get("safe_windows", [])
     work_url = cfg.get("work_url", "about:blank")
+    if not work_url or not work_url.strip():
+        work_url = "about:blank"
+    
     warn_s = float(cfg.get("warning_seconds", 5))
     grace_s = float(cfg.get("grace_after_mouse_seconds", 4))
     mouse_on = bool(cfg.get("mouse_crazy_enabled", True))
     mouse_s = float(cfg.get("mouse_crazy_seconds", 12))
+    # Cap mouse duration to prevent user self-trap
+    mouse_s = min(max(mouse_s, 1), 60)
+    
     nudge_on = bool(cfg.get("repeat_nudge_enabled", True))
     nudge_url = str(cfg.get("repeat_nudge_url", work_url))
     nudge_min = int(cfg.get("repeat_nudge_min_per_hour", 2))
@@ -249,9 +288,10 @@ def run_watcher() -> None:
                     print("   (Close may have failed — browser security varies.)")
                 try:
                     phases = ["warn", "auto_close"] if not mouse_on else ["warn", "mouse", "auto_close"]
-                    webbrowser.open(build_dashboard_url(work_url, active_site, phases))
-                except Exception:
-                    pass
+                    dashboard_url = build_dashboard_url(work_url, active_site, phases)
+                    webbrowser.open(dashboard_url)
+                except (OSError, ValueError) as e:
+                    print(f"{Fore.YELLOW}⚠️  Could not open dashboard: {e}{Style.RESET_ALL}", file=sys.stderr)
                 print(f"\n{Fore.MAGENTA}{personalized_haiku(active_site, 'auto_close')}{Style.RESET_ALL}\n")
                 phase = "idle"
                 active_site = None
@@ -261,6 +301,9 @@ def run_watcher() -> None:
     except KeyboardInterrupt:
         print(f"\n{Fore.CYAN}📊 Watcher stopping — generating report…{Style.RESET_ALL}")
         generate_report()
+    except Exception as e:
+        print(f"\n{Fore.RED}❌ Fatal error in watcher: {e}{Style.RESET_ALL}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

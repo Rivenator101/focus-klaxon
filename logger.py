@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import random
+import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -47,34 +49,75 @@ def _init_log() -> None:
         LOG_FILE.write_text("[]", encoding="utf-8")
 
 
+def _load_json_safe(path: Path, default: list | dict | None = None) -> list | dict:
+    """Load JSON file with fallback on corruption or missing file."""
+    if default is None:
+        default = []
+    try:
+        if not path.exists():
+            return default
+        content = path.read_text(encoding="utf-8")
+        return json.loads(content) if content.strip() else default
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"{Fore.YELLOW}⚠️  Warning: Could not read {path.name}: {e}{Style.RESET_ALL}", file=sys.stderr)
+        return default
+
+
 def log_distraction(site_name: str, note: str | None = None) -> None:
+    """Log a distraction event with atomic file I/O (using file locking)."""
     _init_log()
-    data = json.loads(LOG_FILE.read_text(encoding="utf-8"))
-    entry = {
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
-        "site": site_name,
-        "session_id": date.today().isoformat(),
-        "note": note,
-    }
-    data.append(entry)
-    LOG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    try:
+        with open(LOG_FILE, "r+", encoding="utf-8") as f:
+            # Acquire exclusive lock to prevent race conditions
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError:
+                data = []
+            
+            entry = {
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "site": site_name,
+                "session_id": date.today().isoformat(),
+                "note": note,
+            }
+            data.append(entry)
+            
+            # Write back atomically
+            f.seek(0)
+            f.truncate()
+            json.dump(data, f, indent=2)
+    except OSError as e:
+        print(f"{Fore.RED}❌ Failed to log distraction: {e}{Style.RESET_ALL}", file=sys.stderr)
+        return
+    finally:
+        try:
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)  # type: ignore
+        except (OSError, NameError):
+            pass
+    
     print(f"{Fore.RED}⚠️  Logged distraction:{Style.RESET_ALL} {site_name}")
 
 
 def get_logs_for_day(day: date) -> list[dict]:
-    _init_log()
-    data = json.loads(LOG_FILE.read_text(encoding="utf-8"))
+    data = _load_json_safe(LOG_FILE, default=[])
+    if not isinstance(data, list):
+        return []
     key = day.isoformat()
-    return [d for d in data if d.get("session_id") == key]
+    return [d for d in data if isinstance(d, dict) and d.get("session_id") == key]
 
 
 def count_recent_distractions(hours: int = 1) -> int:
     """Count distraction incidents in the recent rolling window."""
-    _init_log()
-    data = json.loads(LOG_FILE.read_text(encoding="utf-8"))
+    data = _load_json_safe(LOG_FILE, default=[])
+    if not isinstance(data, list):
+        return 0
+    
     cutoff = datetime.now() - timedelta(hours=hours)
     count = 0
     for row in data:
+        if not isinstance(row, dict):
+            continue
         ts = row.get("timestamp")
         note = row.get("note")
         if not ts or note != "warn_popup":
@@ -189,25 +232,34 @@ def generate_report() -> None:
 
 def session_start() -> None:
     payload = {"started_at": datetime.now().isoformat(timespec="seconds")}
-    SESSION_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    try:
+        SESSION_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except OSError as e:
+        print(f"{Fore.YELLOW}⚠️  Warning: Could not write session file: {e}{Style.RESET_ALL}", file=sys.stderr)
 
 
 def session_touch_focus_minutes(add_minutes: int) -> None:
     """Bribe-the-ghost: add imaginary focus credit for demo laughs."""
-    state = {}
-    if SESSION_FILE.exists():
-        state = json.loads(SESSION_FILE.read_text(encoding="utf-8"))
-    credit = int(state.get("focus_credit_minutes", 0)) + add_minutes
-    state["focus_credit_minutes"] = credit
-    SESSION_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    try:
+        state = _load_json_safe(SESSION_FILE, default={})
+        if not isinstance(state, dict):
+            state = {}
+        
+        credit = int(state.get("focus_credit_minutes", 0)) + add_minutes
+        state["focus_credit_minutes"] = credit
+        SESSION_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    except (OSError, ValueError) as e:
+        print(f"{Fore.YELLOW}⚠️  Warning: Could not update session: {e}{Style.RESET_ALL}", file=sys.stderr)
 
 
 def print_recent_logs(limit: int = 10) -> None:
-    _init_log()
-    data = json.loads(LOG_FILE.read_text(encoding="utf-8"))
+    data = _load_json_safe(LOG_FILE, default=[])
+    if not isinstance(data, list):
+        data = []
     if not data:
         print(f"{Fore.GREEN}✨ No distractions logged. Beautiful lie or truth?{Style.RESET_ALL}")
         return
     print(f"\n{Fore.YELLOW}Last {limit} events:{Style.RESET_ALL}")
     for row in data[-limit:]:
-        print(f"  {row.get('timestamp')} — {row.get('site')}")
+        if isinstance(row, dict):
+            print(f"  {row.get('timestamp')} — {row.get('site')}")
